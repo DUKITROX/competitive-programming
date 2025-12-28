@@ -1,0 +1,196 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+template<class T> bool ckmin(T& a, const T& b) { return b < a ? a = b, 1 : 0; }
+template<class T> bool ckmax(T& a, const T& b) { return a < b ? a = b, 1 : 0; }
+
+template<class T> istream& operator>>(istream& is, vector<T>& v) {for(auto& e : v) is >> e; return is;}
+template<class T> ostream& operator<<(ostream& os, vector<T>& v) {for(auto& e : v) os << e << " "; return os;}
+
+mt19937 rng(chrono::steady_clock::now().time_since_epoch().count());
+#define uid(a,b) uniform_int_distribution<int>(a, b)(rng) 
+#define urd(a,b) uniform_real_distribution<double>(a, b)(rng)
+
+template<typename T = int64_t>
+struct FenwickTree {
+	vector<T> s;
+	FenwickTree(int n) : s(n) {}
+	void update(int pos, T dif) { // a[pos] += dif
+		for (; pos < size(s); pos |= pos + 1) s[pos] += dif;
+	}
+	T query(int pos) { // sum of values in [0, pos)
+		T res = 0;
+		for (; pos > 0; pos &= pos - 1) res += s[pos-1];
+		return res;
+	}
+	int lower_bound(T sum) {// min pos st sum of [0, pos] >= sum
+		// Returns n if no sum is >= sum, or -1 if empty sum is.
+		if (sum <= 0) return -1;
+		int pos = 0;
+		for (int pw = 1 << 25; pw; pw >>= 1) {
+			if (pos + pw <= size(s) && s[pos + pw-1] < sum)
+			pos += pw, sum -= s[pos-1];
+		}
+		return pos;
+	}
+};
+struct UAV{
+	int x,y,phi;
+	double B;
+};
+struct Flow{
+	int id,m1,n1,m2,n2;
+	int ax,ay,lx,ly;
+	int t0,k;
+	double Q,q;
+	vector<tuple<int,int,int,double>> sched;
+	bool operator<(const Flow& other)const{return t0 < other.t0;}
+};
+ostream& operator<<(ostream& os, const Flow& flow){
+	os << flow.id << " " << (int)flow.sched.size() << "\n";
+	for(const auto& e : flow.sched)
+		os << get<0>(e) << " " << get<1>(e) << " " << get<2>(e) << " " << get<3>(e) << "\n";
+}
+
+inline int mdist(int ax, int ay, int lx, int ly);
+inline double getBW(const UAV& uav, int t);
+
+constexpr int K = 20, H = 20; // max number of states processed by timeslot, number of children generated
+constexpr double EPS = 1e-9;
+int M,N,F,T;
+vector<vector<UAV>> uavs;
+vector<vector<vector<double>>> BW;
+
+struct State{
+	int t; double score;
+	vector<Flow> flows; int it; // flows data and index of first not added flow 
+	set<int> actf; // active flows
+
+	State() : t(0), score(0.0){}
+	State(int t, double score) : t(t), score(score){}
+	State(const State& s){
+		t = s.t + 1; 
+		score = s.score;
+		flows = s.flows;
+		actf = s.actf;
+	}
+
+	bool operator<(const State& other)const{return score > other.score;}
+};
+
+struct Treq{
+	int fid,ax,ay,lx,ly,t,k; // flow id, target (lx,ly)
+	double score,q,Q;
+
+	Treq(int fid, int lx, int ly, State& s) : fid(fid), ax(s.flows[fid].ax), ay(s.flows[fid].ay), lx(lx), ly(ly), t(s.t), q(s.flows[fid].q), Q(s.flows[fid].Q){
+		k = s.flows[fid].k + !(s.flows[fid].lx == lx && s.flows[fid].ly == ly);
+		double s1 = q / Q;
+		double s2 = (10.0*q) / ((t + 10.0)*Q);
+		double s3 = q / (pow(2.0, 0.1*mdist(ax,ay,lx,ly)));
+		double s4 = 1.0/k;
+		
+		score = 0.4*s1 + 0.2*s2 + 0.3*s3 + 0.1*s4;
+	}
+	bool operator<(const Treq& other) const {return score > other.score;}
+};
+
+void processState(State& s, deque<State>& dq){
+	vector<vector<double>> bw(M,vector<double>(N,0.0));
+	vector<Treq> req;
+
+	// add flows which start in this state
+	while(s.it < F && s.flows[s.it].t0 == s.t) s.actf.insert(s.it++);
+
+	// process all Treq
+	for(const int& i : s.actf)
+		for(int lx = s.flows[i].m1; lx <= s.flows[i].m2; lx++)
+			for(int ly = s.flows[i].n1; ly <= s.flows[i].n2; ly++)
+				req.push_back(Treq{i,lx,ly,s});
+	sort(req.begin(), req.end());
+
+	int n = req.size();
+	FenwickTree<double> ft(n);
+	
+	// process "hijos"
+	for(int h = 0; h < H; h++){
+		for(int i = 0; i < n; i++) ft.update(i, req[i].score);
+		
+		State sh(s);
+
+		for(int _; _ < n; _++){
+			double prob = urd(0, ft.query(n));
+			int rid = ft.lower_bound(prob); // selected Treq
+			int fid = req[rid].fid;
+			ft.update(rid,0.0);
+			
+			int ax = req[rid].ax, ay = req[rid].ay;
+			if (bw[ax][ay] + req[rid].q <= BW[ax][ay][s.t]){
+				sh.flows[fid].sched.push_back({s.t, ax, ay, req[rid].q});
+				bw[ax][ay] += req[rid].q;
+				if(sh.flows[fid].q -= req[rid].q < EPS)
+					sh.actf.erase(fid);
+			}
+		}
+
+		dq.push_back(move(sh));
+	}
+}
+
+// beam search
+State& solve(const State& s0){
+	deque<State> dq; dq.push_back(s0);
+	for(int t = s0.t; t < T; t++){
+
+		// process top K states
+		int k = min(K, (int)dq.size());
+		for(int i = 0; i < k; i++){
+			processState(dq.front(), dq);
+			dq.pop_front();
+		}
+
+		sort(dq.begin(), dq.end()); // TODO: optimize this if TLE
+		dq.resize(min(K, (int)dq.size()));
+	}
+	return dq.front();
+}
+
+int32_t main(){
+	ios::sync_with_stdio(false);
+	cin.tie(nullptr), cout.tie(nullptr);
+	
+	cin >> M >> N >> F >> T;
+	State s0 = {0,0.0};
+
+	// uavs
+	for(int i = 0; i < M*N; i++){
+		int x,y,phi; double B;
+		cin >> x >> y >> B >> phi;
+		uavs[x][y] = {x,y,phi,B};
+		for(int t = 0; t < 10; t++) BW[x][y][T] = getBW(uavs[x][y], t);
+	}
+
+	//flows
+	s0.flows.resize(F);
+	for(int i = 0; i < F; i++){
+		int id,ax,ay,t,m1,n1,m2,n2; double Q;
+		cin >> id >> ax >> ay >> t >> Q >> m1 >> n1 >> m2 >> n2;
+		s0.flows[i] = {id,m1,n1,m2,n2,ax,ay,-1,-1,t,0,Q,Q};
+	}
+	sort(s0.flows.begin(), s0.flows.end());
+
+	State s = solve(s0);
+
+	cout << fixed << setprecision(5);
+	for(const auto& flow : s.flows)
+		cout << flow;
+}
+
+inline int mdist(int ax, int ay, int lx, int ly){
+	return abs(ax-lx) + abs(ay-ly);
+}
+inline double getBW(const UAV& uav, int t){
+	t += uav.phi; t %= 10;
+    if (t <= 1 || t >= 8) return 0.0;
+    else if (t == 2 || t == 7) return uav.B / 2.0;
+    else return uav.B;
+}

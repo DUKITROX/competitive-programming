@@ -1,0 +1,6 @@
+#define LSOne(S) ((S) & -(S)) // least significant one
+__builtin_clz()
+__lzcnt() //number of zeros on the left
+__builtin_ctz() // number of zeros on the right
+__builtin_popcount() // number of ones
+__popcnt

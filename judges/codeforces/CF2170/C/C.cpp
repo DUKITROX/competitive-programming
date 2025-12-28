@@ -1,0 +1,31 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+template<class T> bool ckmin(T& a, const T& b) { return b < a ? a = b, 1 : 0; }
+template<class T> bool ckmax(T& a, const T& b) { return a < b ? a = b, 1 : 0; }
+
+template<class T> istream& operator>>(istream& is, vector<T>& v) {for(auto& e : v) is >> e; return is;}
+template<class T> ostream& operator<<(ostream& os, vector<T>& v) {for(auto& e : v) os << e << " "; return os;}
+
+#define int int64_t
+
+void solve(){
+	int n,k; cin >> n >> k;
+	vector<int> a(n),b(n); cin >> a >> b; 
+	sort(a.begin(), a.end()); sort(b.begin(), b.end());
+
+	int i = 0, j = n;
+	while(j){
+		j = upper_bound(a.begin(), a.begin() + j, (k-b[i]) / (b[i]+1)) - a.begin() - 1;
+		i++;
+	}
+
+	cout << i << "\n";
+}
+
+int32_t main(){
+	ios::sync_with_stdio(false);
+	cin.tie(nullptr), cout.tie(nullptr);
+	int tt; cin >> tt; while(tt--) solve();
+}
+
